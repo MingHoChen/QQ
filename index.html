@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>品質工程整合系統 (v20.3)</title>
+    <link rel="stylesheet" href="style.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+
+<body>
+
+    <nav class="main-nav">
+        <div class="nav-brand">品質數據分析平台 (v20.3)</div>
+        <button class="nav-tab active" onclick="window.switchTab('cpk')">📊 Cpk/Ppk 計算機</button>
+        <button class="nav-tab" onclick="window.switchTab('spc')">📈 SPC 管制圖</button>
+        <button class="nav-tab" onclick="window.switchTab('pareto')">📊 柏拉圖</button>
+        <button class="nav-tab" onclick="window.switchTab('scatter')">📉 散佈圖</button>
+        <button class="nav-tab" onclick="window.switchTab('boxplot')">📦 盒鬚圖</button>
+        <button class="nav-tab" onclick="window.switchTab('grr')">🔧 Gage R&R</button>
+    </nav>
+
+    <div id="view-cpk" class="tab-content active">
+        <main class="cpk-layout">
+            <h1>製程能力計算機 (Process Capability)</h1>
+            
+            <div class="card cpk-setup-flex-container">
+                
+                <div class="setup-column">
+                    <h2>1. 上傳數據檔案</h2>
+                    <p class="desc-text">請上傳 .xlsx (單檔) 或 .csv (可多檔批次整合)。</p>
+                    <input type="file" id="file-input" accept=".xlsx, .xls, .csv, .txt" multiple>
+                    <div id="file-status" style="font-size: 12px; color: #e74c3c; margin-top: 5px;"></div>
+                </div>
+
+                <div class="setup-column">
+                    <h2>2. 選擇分析模式</h2>
+                    <p class="desc-text">請選擇您檔案的數據格式。</p>
+                    <label style="display:block; margin-bottom:5px; font-weight:bold;">分析模式:</label>
+                    <select id="data-mode-select" style="width:100%; padding:6px;">
+                        <option value="long">模式 A: 長格式 (Standard List)</option>
+                        <option value="wide">模式 B: 寬格式 (Analyze by Row)</option>
+                    </select>
+                </div>
+
+                <div class="setup-column">
+                    <h2>3. 選擇工作表</h2>
+                    <p class="desc-text">支援多選 (Ctrl/Cmd + 點擊)。</p>
+                    <label style="display:block; margin-bottom:5px; font-weight:bold;">工作表列表:</label>
+                    <select id="sheet-selector" multiple style="width:100%; height:150px; padding:6px; border:1px solid #ccc; border-radius:4px;" disabled>
+                        <option value="">(請先上傳檔案)</option>
+                    </select>
+                    <button id="confirm-sheet-btn" class="btn-mini" style="width:100%; margin-top:10px;" onclick="processSelectedSheets()">讀取選定數據</button>
+                </div>
+
+                <div class="setup-column">
+                    <div id="col-select-long">
+                        <h2>4. 選擇欄位 (模式 A)</h2>
+                        <div class="form-group">
+                            <label>類別欄位 (多選):</label>
+                            <select id="category-col" multiple style="height:80px;"></select>
+                        </div>
+                        <div class="form-group" style="margin-top:5px;">
+                            <label>數值欄位:</label>
+                            <select id="value-col"></select>
+                        </div>
+                    </div>
+
+                    <div id="col-select-wide" style="display:none;">
+                        <h2>4. 選擇欄位 (模式 B)</h2>
+                        <div class="form-group">
+                            <label>類別 (標頭) 欄位:</label>
+                            <select id="category-header-selector"></select>
+                            <p class="hint-text" style="color:#666; margin-top:5px; line-height:1.4; font-size:12px;">
+                                程式將自動選取此欄位之外的 <b>*所有*</b> 數值欄進行計算。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setup-column">
+                    <h2>5. 規格界限 (選填)</h2>
+                    <div class="form-group">
+                        <label>規格下限 (LSL):</label>
+                        <input type="number" id="lsl" placeholder="Cpk 計算用" style="width:100%; padding:6px; margin-bottom:10px;" step="0.001">
+                    </div>
+                    <div class="form-group">
+                        <label>規格上限 (USL):</label>
+                        <input type="number" id="usl" placeholder="Cpk 計算用" style="width:100%; padding:6px;" step="0.001">
+                    </div>
+                </div>
+
+            </div>
+
+            <button id="calculate-btn" class="action-btn" style="margin-top:20px;">開始計算</button>
+            <p style="text-align: center; font-size: 12px; color: #666; margin-bottom: 20px;">
+                * 註：此頁面計算採用整體標準差 (Overall Sigma)，結果等同於 Ppk (長期製程能力)。
+            </p>
+
+            <div class="results-container">
+                <div class="card card-left" id="chart-card" style="display: none;">
+                    <h2>製程能力分佈圖</h2>
+                    <div class="chart-container"><canvas id="cpk-chart"></canvas></div>
+                </div>
+
+                <div class="card card-right" id="results-card" style="display: none;">
+                    <h2>計算結果</h2>
+                    <button id="export-btn" class="export-btn">匯出 Excel (含圖表)</button>
+                    <div id="results-display"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="view-spc" class="tab-content">
+        <header class="spc-top-bar">
+            <div class="spc-controls">
+                <div class="source-select">
+                    <label>來源:</label>
+                    <select id="spc-source-mode" onchange="handleSpcSourceChange()">
+                        <option value="cpk">繼承 Cpk/Ppk 數據</option>
+                        <option value="new">上傳單一檔案</option>
+                    </select>
+                </div>
+
+                <div id="spc-tool-cpk" class="tool-group">
+                    <button class="btn-mini" onclick="parseSpcInheritedData()">📥 讀取數據</button>
+                </div>
+
+                <div id="spc-tool-new" class="tool-group" style="display:none;">
+                    <input type="file" id="spc-single-file" accept=".xlsx, .xls, .csv">
+                </div>
+
+                <div class="tool-group">
+                    <select id="spc-inherit-item-select" onchange="loadSpcItemToTable()"
+                        style="width: 180px; display:none;">
+                        <option value="">(請先讀取)</option>
+                    </select>
+                </div>
+
+                <div class="spec-inputs">
+                    <span>USL:</span><input type="number" id="uslInput" step="0.01">
+                    <span>LSL:</span><input type="number" id="lslInput" step="0.01">
+                </div>
+            </div>
+
+            <div class="actions-area">
+                <button class="btn success" onclick="calculateAndDraw()">🔄 刷新</button>
+                <button class="btn warning" onclick="exportSpcToExcel()">E 匯出</button>
+                <button class="btn danger" onclick="clearSpcData()">🗑️ 清空</button>
+            </div>
+        </header>
+
+        <div class="spc-main-container" id="spcMainContainer">
+            <section class="spc-left-panel">
+                <div class="panel-header">製程能力指標 (SPC)</div>
+                <div class="stats-dashboard capability-board">
+                    <div class="stat-card"><span class="stat-title">Cp (組內)</span><span class="stat-value"
+                            id="val-cp">-</span></div>
+                    <div class="stat-card"><span class="stat-title">Cpk (組內)</span><span class="stat-value"
+                            id="val-cpk">-</span></div>
+                    <div class="stat-card"><span class="stat-title">Pp (整體)</span><span class="stat-value"
+                            id="val-pp">-</span></div>
+                    <div class="stat-card"><span class="stat-title">Ppk (整體)</span><span class="stat-value"
+                            id="val-ppk">-</span></div>
+                </div>
+                <div class="panel-header">管制圖統計量</div>
+                <div class="stats-dashboard spc-board">
+                    <div class="stat-card"><span class="stat-title">X-Db (總平均)</span><span class="stat-value"
+                            id="val-xdb">-</span></div>
+                    <div class="stat-card"><span class="stat-title">R-Bar (平均全距)</span><span class="stat-value"
+                            id="val-rb">-</span></div>
+                    <div class="stat-card limit-ucl"><span class="stat-title">UCL(X)</span><span class="stat-value"
+                            id="val-uclx">-</span></div>
+                    <div class="stat-card limit-lcl"><span class="stat-title">LCL(X)</span><span class="stat-value"
+                            id="val-lclx">-</span></div>
+                    <div class="stat-card limit-ucl"><span class="stat-title">UCL(R)</span><span class="stat-value"
+                            id="val-uclr">-</span></div>
+                    <div class="stat-card limit-lcl"><span class="stat-title">LCL(R)</span><span class="stat-value"
+                            id="val-lclr">-</span></div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table id="inputTable"></table>
+                </div>
+                <button class="btn-add-row" onclick="addMoreRows()">➕ 增加 25 列</button>
+            </section>
+            <div class="resizer" id="dragMe"></div>
+            <section class="spc-right-panel">
+                <div class="chart-box">
+                    <div class="chart-header">
+                        <h3>X-Bar Chart</h3><button class="btn-sm" onclick="downloadChart('xbarChart')">下載</button>
+                    </div>
+                    <div class="canvas-container"><canvas id="xbarChart" style="background-color: white;"></canvas>
+                    </div>
+                    <div id="rule-violations" class="violation-box"></div>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-header">
+                        <h3>Range Chart</h3><button class="btn-sm" onclick="downloadChart('rChart')">下載</button>
+                    </div>
+                    <div class="canvas-container"><canvas id="rChart" style="background-color: white;"></canvas></div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="view-pareto" class="tab-content">
+        <main class="cpk-layout">
+            <h1>柏拉圖分析 (Pareto Chart)</h1>
+            <div class="card cpk-setup-grid">
+                <div class="setup-area-left">
+                    <div class="setup-block">
+                        <h2>1. 數據來源</h2>
+                        <select id="pareto-source-mode" onchange="handleParetoSourceChange()"
+                            style="width: 100%; padding: 8px;">
+                            <option value="cpk">繼承 Cpk/Ppk 數據</option>
+                            <option value="new">上傳新檔案</option>
+                        </select>
+                        <div id="pareto-file-upload" style="display:none; margin-top:10px;">
+                            <input type="file" id="pareto-file-input" accept=".xlsx, .xls, .csv">
+                        </div>
+                    </div>
+                    <div class="setup-block">
+                        <h2>2. 欄位設定</h2>
+                        <div class="form-group">
+                            <label>缺陷/項目欄位 (Category):</label>
+                            <select id="pareto-cat-col"></select>
+                        </div>
+                        <div class="form-group" style="margin-top:10px;">
+                            <label>數值/頻率欄位 (Value) [選填]:</label>
+                            <select id="pareto-val-col">
+                                <option value="">-- 無 (計算出現次數) --</option>
+                            </select>
+                            <p class="hint-text" style="font-size:12px; color:#666;">若留空，將計算該項目的出現次數。</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="setup-area-right">
+                    <div class="setup-block">
+                        <h2>3. 繪圖設定</h2>
+                        <button id="pareto-calc-btn" class="action-btn" onclick="calculatePareto()">繪製柏拉圖</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card" style="min-height: 500px;">
+                <div class="chart-container"><canvas id="pareto-chart"></canvas></div>
+            </div>
+        </main>
+    </div>
+
+    <div id="view-scatter" class="tab-content">
+        <main class="cpk-layout">
+            <h1>散佈圖分析 (Scatter Plot)</h1>
+            <div class="card cpk-setup-grid">
+                <div class="setup-area-left">
+                    <div class="setup-block">
+                        <h2>1. 數據來源</h2>
+                        <select id="scatter-source-mode" onchange="handleScatterSourceChange()"
+                            style="width: 100%; padding: 8px;">
+                            <option value="cpk">繼承 Cpk/Ppk 數據</option>
+                            <option value="new">上傳新檔案</option>
+                        </select>
+                        <div id="scatter-file-upload" style="display:none; margin-top:10px;">
+                            <input type="file" id="scatter-file-input" accept=".xlsx, .xls, .csv">
+                        </div>
+                    </div>
+                    <div class="setup-block">
+                        <h2>2. 軸向設定</h2>
+                        <div class="form-group">
+                            <label>X 軸 (自變數):</label>
+                            <select id="scatter-x-col"></select>
+                        </div>
+                        <div class="form-group" style="margin-top:10px;">
+                            <label>Y 軸 (應變數):</label>
+                            <select id="scatter-y-col"></select>
+                        </div>
+                        <div class="form-group" style="margin-top:10px;">
+                            <label>分組欄位 (選填):</label>
+                            <select id="scatter-group-col">
+                                <option value="">-- 不分組 --</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="setup-area-right">
+                    <div class="setup-block">
+                        <h2>3. 分析結果</h2>
+                        <button id="scatter-calc-btn" class="action-btn" onclick="calculateScatter()">繪製散佈圖</button>
+                        <div id="scatter-stats"
+                            style="margin-top: 20px; font-size: 16px; font-weight: bold; color: #2c3e50;">
+                            相關係數 (r): <span id="val-r">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card" style="min-height: 500px;">
+                <div class="chart-container"><canvas id="scatter-chart"></canvas></div>
+            </div>
+        </main>
+    </div>
+
+    <div id="view-boxplot" class="tab-content">
+        <main class="cpk-layout">
+            <h1>盒鬚圖分析 (Box Plot Analysis)</h1>
+            <div class="card cpk-setup-grid">
+                <div class="setup-area-left">
+                    <div class="setup-block">
+                        <h2>1. 數據來源</h2>
+                        <select id="boxplot-source-mode" onchange="handleBoxplotSourceChange()"
+                            style="width: 100%; padding: 8px;">
+                            <option value="cpk">繼承 Cpk/Ppk 數據</option>
+                            <option value="new">上傳新檔案</option>
+                        </select>
+                        <div id="boxplot-file-upload" style="display:none; margin-top:10px;">
+                            <input type="file" id="boxplot-file-input" accept=".xlsx, .xls, .csv">
+                        </div>
+                    </div>
+                    <div class="setup-block">
+                        <h2>2. 欄位設定</h2>
+                        <div class="form-group">
+                            <label>分組欄位 (Group):</label>
+                            <select id="boxplot-group-col"></select>
+                        </div>
+                        <div class="form-group" style="margin-top:10px;">
+                            <label>數值欄位 (Value):</label>
+                            <select id="boxplot-value-col"></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="setup-area-right">
+                    <div class="setup-block">
+                        <h2>3. 分析選項</h2>
+                        <div class="form-group">
+                            <label><input type="checkbox" id="boxplot-show-mean" checked> 顯示平均值</label>
+                        </div>
+                        <div class="form-group">
+                            <label><input type="checkbox" id="boxplot-show-outliers" checked> 顯示異常值</label>
+                        </div>
+                        <div class="form-group">
+                            <label><input type="checkbox" id="boxplot-run-anova"> 執行 ANOVA 分析</label>
+                        </div>
+                        <button id="boxplot-calc-btn" class="action-btn" onclick="calculateBoxplot()">繪製盒鬚圖</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card" style="min-height: 500px;">
+                <div class="chart-container"><canvas id="boxplot-chart"></canvas></div>
+            </div>
+            <div id="anova-results" class="card" style="display:none;">
+                <h2>ANOVA 分析結果</h2>
+                <div id="anova-table"></div>
+            </div>
+        </main>
+    </div>
+
+    <div id="view-grr" class="tab-content">
+        <main class="cpk-layout">
+            <h1>Gage R&R 分析 (ANOVA Method)</h1>
+            <div class="card cpk-setup-grid">
+                <div class="setup-area-left">
+                    <div class="setup-block">
+                        <h2>1. 數據來源</h2>
+                        <select id="grr-source-mode" onchange="handleGrrSourceChange()" style="width: 100%; padding: 8px;">
+                            <option value="new">上傳新檔案</option>
+                            <option value="cpk">繼承 Cpk/Ppk 數據</option>
+                        </select>
+                        <div id="grr-file-upload" style="margin-top:10px;">
+                            <input type="file" id="grr-file-input" accept=".xlsx, .xls, .csv">
+                            <p class="hint-text" style="font-size:12px; color:#666; margin-top:5px;">
+                                建議格式：3欄位 (作業員, 部件, 量測值)。<br>
+                                典型範例：3 作業員 × 10 部件 × 3 次量測 = 90 筆數據。
+                            </p>
+                        </div>
+                    </div>
+                    <div class="setup-block">
+                        <h2>2. 欄位對應</h2>
+                        <div class="form-group">
+                            <label>作業員欄位 (Operator):</label>
+                            <select id="grr-operator-col"></select>
+                        </div>
+                        <div class="form-group" style="margin-top:10px;">
+                            <label>部件/樣本欄位 (Part):</label>
+                            <select id="grr-part-col"></select>
+                        </div>
+                        <div class="form-group" style="margin-top:10px;">
+                            <label>量測值欄位 (Measurement):</label>
+                            <select id="grr-measurement-col"></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="setup-area-right">
+                    <div class="setup-block">
+                        <h2>3. 執行分析</h2>
+                        <button id="grr-calc-btn" class="action-btn" onclick="calculateGrr()">計算 Gage R&R</button>
+                    </div>
+                    <div id="grr-summary-card" class="setup-block" style="display:none; margin-top:20px; background:#f8f9fa; padding:15px; border-radius:5px; border-left:5px solid #3498db;">
+                        <h3 style="margin:0 0 10px 0;">分析判定</h3>
+                        <div style="font-size:28px; font-weight:bold; color:#2c3e50;">
+                            %GRR: <span id="grr-final-percent">-</span>%
+                        </div>
+                        <div id="grr-verdict-text" style="font-size:18px; font-weight:bold; margin-top:5px;"></div>
+                        <div style="font-size:12px; color:#777; margin-top:10px;">
+                            判定標準: &lt;10% (優秀), 10-30% (有條件接受), &gt;30% (不合格)
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="grr-results-container" style="display:none;">
+                
+                <div class="card" style="margin-bottom: 20px;">
+                    <h2>Gage R&R 六合一圖表 (Six Pack)</h2>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 10px;">
+                        <div class="chart-box" style="height: 300px; border:1px solid #eee; padding:5px;">
+                            <div style="font-weight:bold; text-align:center; margin-bottom:5px;">1. 變異分量 (Components of Variation)</div>
+                            <div style="position:relative; height:260px; width:100%;">
+                                <canvas id="grr-chart-components"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="chart-box" style="height: 300px; border:1px solid #eee; padding:5px;">
+                            <div style="font-weight:bold; text-align:center; margin-bottom:5px;">2. R Chart by Operator</div>
+                            <div style="position:relative; height:260px; width:100%;">
+                                <canvas id="grr-chart-r"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-box" style="height: 300px; border:1px solid #eee; padding:5px;">
+                            <div style="font-weight:bold; text-align:center; margin-bottom:5px;">3. X-Bar Chart by Operator</div>
+                            <div style="position:relative; height:260px; width:100%;">
+                                <canvas id="grr-chart-xbar"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-box" style="height: 300px; border:1px solid #eee; padding:5px;">
+                            <div style="font-weight:bold; text-align:center; margin-bottom:5px;">4. By Part (部件量測值)</div>
+                            <div style="position:relative; height:260px; width:100%;">
+                                <canvas id="grr-chart-bypart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-box" style="height: 300px; border:1px solid #eee; padding:5px;">
+                            <div style="font-weight:bold; text-align:center; margin-bottom:5px;">5. By Operator (作業員量測值)</div>
+                            <div style="position:relative; height:260px; width:100%;">
+                                <canvas id="grr-chart-byop"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-box" style="height: 300px; border:1px solid #eee; padding:5px;">
+                            <div style="font-weight:bold; text-align:center; margin-bottom:5px;">6. Operator * Part Interaction</div>
+                            <div style="position:relative; height:260px; width:100%;">
+                                <canvas id="grr-chart-interaction"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Gage R&R 數據總表</h2>
+                    
+                    <h3>1. 變異數分析表 (ANOVA Table)</h3>
+                    <div id="grr-anova-table" class="grr-table" style="overflow-x:auto; margin-bottom:20px;"></div>
+
+                    <h3>2. 量測系統分析報告 (Gage R&R Report)</h3>
+                    <div id="grr-report-table" class="grr-table" style="overflow-x:auto;"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <footer class="status-bar"><span id="statusMsg">系統就緒</span><span class="version">v20.3-20260326</span></footer>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+
+</html>
