@@ -9,3 +9,5 @@
 
 ## 版本更新 (Version Bump)
 - **全站版號推進**: 配合本次拔除作業，將網頁標題、頁首與頁尾標示統一推進至 `v20.3`。
+
+https://minghochen.github.io/QQ/
